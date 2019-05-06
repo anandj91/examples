@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 import sys
+import pprint
 
 import torch
 import torch.nn as nn
@@ -80,6 +81,7 @@ best_acc1 = 0
 
 def main():
     args = parser.parse_args()
+    pprint.pprint(args)
 
     if args.seed is not None:
         random.seed(args.seed)
