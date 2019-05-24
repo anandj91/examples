@@ -9,6 +9,8 @@ import torch.onnx
 
 import data
 import model
+import sys
+from nltk.translate.bleu_score import sentence_bleu
 
 parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./data/wikitext-2',
@@ -78,8 +80,11 @@ def batchify(data, bsz):
     nbatch = data.size(0) // bsz
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     data = data.narrow(0, 0, nbatch * bsz)
+    print('shape narrow: ', data.shape)
     # Evenly divide the data across the bsz batches.
     data = data.view(bsz, -1).t().contiguous()
+    print('shape final: ', data.shape)
+    sys.stdout.flush()
     return data.to(device)
 
 eval_batch_size = 10
@@ -129,6 +134,7 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0.
+    bleu_list = []
     ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(eval_batch_size)
     with torch.no_grad():
@@ -136,6 +142,14 @@ def evaluate(data_source):
             data, targets = get_batch(data_source, i)
             output, hidden = model(data, hidden)
             output_flat = output.view(-1, ntokens)
+            i = torch.max(output, 2)[1].t()
+            t = targets.view(int(len(targets)/eval_batch_size), eval_batch_size).t()
+            #test = [sentence_bleu([corpus.dictionary.idx2word[zti] for zti in zt.tolist()], [corpus.dictionary.idx2word[zii] for zii in zi.tolist()]) for zt, zi in zip(t,i)]
+            test = [([corpus.dictionary.idx2word[zti] for zti in zt.tolist()], [corpus.dictionary.idx2word[zii] for zii in zi.tolist()]) for zt, zi in zip(t,i)]
+            print('test: ', test)
+            #bleu_list = [sentence_bleu(list(zt), list(zi)) for zt, zi in zip(list(t), list(i))]
+            #print(bleu_list)
+            sys.stdout.flush()
             total_loss += len(data) * criterion(output_flat, targets).item()
             hidden = repackage_hidden(hidden)
     return total_loss / (len(data_source) - 1)
