@@ -20,6 +20,8 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
+import apex
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -77,6 +79,10 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
+parser.add_argument('--opt-level', type=str)
+parser.add_argument('--keep-batchnorm-fp32', type=str, default=None)
+parser.add_argument('--loss-scale', type=str, default=None)
+
 
 best_acc1 = 0
 
@@ -176,6 +182,10 @@ def main_worker(gpu, ngpus_per_node, args):
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
+    mode, optimizer = apex.amp.initialize(model, optimizer,
+                                           opt_level=args.opt_level,
+                                           keep_batchnorm_fp32=args.keep_batchnorm_fp32,
+                                           loss_scale=args.loss_scale)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -285,7 +295,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        with apex.amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
         optimizer.step()
 
         # measure elapsed time
