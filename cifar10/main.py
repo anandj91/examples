@@ -68,6 +68,8 @@ parser.add_argument('--dist-backend', default='nccl', type=str,
                     help='distributed backend')
 parser.add_argument('--seed', default=None, type=int,
                     help='seed for initializing training. ')
+parser.add_argument('--ckpt', default=None, type=str,
+                    help='checkpoint directory')
 parser.add_argument('--gpu', default=None, type=int,
                     help='GPU id to use.')
 parser.add_argument('--multiprocessing-distributed', action='store_true',
@@ -247,7 +249,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best, "ckpt/ckpt_%d.pth.tar" % epoch)
+            }, is_best, (args.ckpt+"/ckpt_%d.pth.tar") % epoch)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
