@@ -93,7 +93,7 @@ test_data = batchify(corpus.test, eval_batch_size)
 
 ntokens = len(corpus.dictionary)
 model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
-
+optimizer = torch.optim.SGD(model.parameters(), args.lr)
 criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
@@ -160,8 +160,7 @@ def train():
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        for p in model.parameters():
-            p.data.add_(-lr, p.grad.data)
+        optimizer.step()
 
         total_loss += loss.item()
 
@@ -208,6 +207,7 @@ try:
         else:
             # Anneal the learning rate if no improvement has been seen in the validation dataset.
             lr /= 4.0
+            optimizer = torch.optim.SGD(model.parameters(), lr)
 except KeyboardInterrupt:
     print('-' * 89)
     print('Exiting from training early')
