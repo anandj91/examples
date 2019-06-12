@@ -9,6 +9,12 @@ import torch.onnx
 
 import data
 import model
+import sys
+
+from apex.parallel import DistributedDataParallel as DDP
+from apex.fp16_utils import *
+from apex import amp, optimizers
+from apex.multi_tensor_apply import multi_tensor_applier
 
 parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./data/wikitext-2',
@@ -45,6 +51,9 @@ parser.add_argument('--save', type=str, default='model.pt',
                     help='path to save the final model')
 parser.add_argument('--onnx-export', type=str, default='',
                     help='path to export the final model in onnx format')
+parser.add_argument('--opt-level', type=str)
+parser.add_argument('--keep-batchnorm-fp32', action='store_true')
+parser.add_argument('--loss-scale', type=str, default=None)
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -94,6 +103,12 @@ test_data = batchify(corpus.test, eval_batch_size)
 ntokens = len(corpus.dictionary)
 model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
 optimizer = torch.optim.SGD(model.parameters(), args.lr)
+model, optimizer = amp.initialize(model, optimizer,
+                        opt_level=args.opt_level,
+                        keep_batchnorm_fp32=args.keep_batchnorm_fp32,
+                        loss_scale=args.loss_scale)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.25, 
+                        patience=1, verbose=True)
 criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
@@ -156,7 +171,8 @@ def train():
         model.zero_grad()
         output, hidden = model(data, hidden)
         loss = criterion(output.view(-1, ntokens), targets)
-        loss.backward()
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -171,6 +187,7 @@ def train():
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
                 elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+            sys.stdout.flush()
             total_loss = 0
             start_time = time.time()
 
@@ -199,15 +216,16 @@ try:
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
         print('-' * 89)
+        sys.stdout.flush()
         # Save the model if the validation loss is the best we've seen so far.
+        scheduler.step(val_loss)
+        '''
         if not best_val_loss or val_loss < best_val_loss:
             with open(args.save, 'wb') as f:
                 torch.save(model, f)
             best_val_loss = val_loss
-        else:
-            # Anneal the learning rate if no improvement has been seen in the validation dataset.
-            lr /= 4.0
-            optimizer = torch.optim.SGD(model.parameters(), lr)
+        '''
+
 except KeyboardInterrupt:
     print('-' * 89)
     print('Exiting from training early')
